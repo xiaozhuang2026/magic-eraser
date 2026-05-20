@@ -53,13 +53,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .toast{position:fixed;top:20px;right:20px;padding:12px 24px;border-radius:8px;background:#22c55e;color:#fff;font-size:14px;z-index:100;opacity:0;transition:opacity .3s;pointer-events:none}
 .toast.show{opacity:1}
 .hidden{display:none!important}
+.loading-banner{display:none;background:linear-gradient(135deg,#7c3aed,#3b82f6);color:#fff;text-align:center;padding:10px;font-size:14px;animation:pulse 1.5s ease-in-out infinite}
+.loading-banner.active{display:block}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
 </style>
 </head>
 <body>
 <div class="header">
 <h1>AI魔法橡皮擦</h1>
-<p>免费在线去水印 · 纯浏览器处理 · 无需上传服务器</p>
+<p>免费在线去水印 · OpenCV引擎 · 无需上传服务器</p>
 </div>
+<div class="loading-banner" id="loadingBanner">正在加载 OpenCV 引擎（首次约需10秒）...</div>
 <div class="app">
 <div class="upload-area" id="uploadArea">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
@@ -76,6 +80,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="sep"></div>
 <div class="brush-control">
 画笔大小: <input type="range" id="brushSize" min="3" max="80" value="20"> <span id="brushSizeVal">20</span>px
+</div>
+<div class="sep"></div>
+<div class="brush-control">
+修复半径: <input type="range" id="inpaintRadius" min="1" max="30" value="10"> <span id="inpaintRadiusVal">10</span>px
 </div>
 <div class="sep"></div>
 <button class="btn btn-primary" id="btnRemove" disabled>去除水印</button>
@@ -102,12 +110,41 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="features" id="featureSection">
 <div class="feature"><div class="icon">🔒</div><h3>隐私安全</h3><p>图片完全在浏览器本地处理</p></div>
 <div class="feature"><div class="icon">🆓</div><h3>完全免费</h3><p>无限制使用，无水印</p></div>
-<div class="feature"><div class="icon">⚡</div><h3>智能修复</h3><p>BFS逐层填充 + 渐变保持</p></div>
+<div class="feature"><div class="icon">⚡</div><h3>OpenCV引擎</h3><p>Telea + Navier-Stokes 双算法</p></div>
 <div class="feature"><div class="icon">📱</div><h3>多端支持</h3><p>手机平板电脑均可使用</p></div>
 </div>
 </div>
 <div class="toast" id="toast"></div>
+
 <script>
+// Load OpenCV.js
+const CV_URL='https://docs.opencv.org/4.9.0/opencv.js';
+let cvReady=false;
+const loadingBanner=$('loadingBanner');
+loadingBanner.classList.add('active');
+
+function loadOpenCV(){
+return new Promise((resolve,reject)=>{
+if(typeof cv!=='undefined'&&cv.Mat){cvReady=true;loadingBanner.classList.remove('active');resolve();return}
+const script=document.createElement('script');
+script.setAttribute('async','');
+script.setAttribute('type','text/javascript');
+script.addEventListener('load',()=>{
+cv['onRuntimeInitialized']=()=>{cvReady=true;loadingBanner.classList.remove('active');resolve()};
+// Fallback: poll for ready
+let tries=0;
+const poll=setInterval(()=>{
+if(typeof cv!=='undefined'&&cv.Mat){clearInterval(poll);cvReady=true;loadingBanner.classList.remove('active');resolve()}
+if(++tries>200){clearInterval(poll);reject(new Error('OpenCV load timeout'))}
+},100);
+});
+script.addEventListener('error',()=>reject(new Error('Failed to load OpenCV')));
+script.setAttribute('src',CV_URL);
+document.head.appendChild(script);
+});
+}
+loadOpenCV().catch(e=>console.error('OpenCV load error:',e));
+
 const $=id=>document.getElementById(id);
 const uploadArea=$('uploadArea'),fileInput=$('fileInput');
 const editorSection=$('editorSection'),featureSection=$('featureSection');
@@ -115,6 +152,7 @@ const displayCanvas=$('displayCanvas'),dCtx=displayCanvas.getContext('2d');
 const compCanvas=$('compCanvas'),compCtx=compCanvas.getContext('2d');
 const canvasBox=$('canvasBox'),comparisonBox=$('comparisonBox');
 const brushSizeInput=$('brushSize'),brushSizeVal=$('brushSizeVal');
+const inpaintRadiusInput=$('inpaintRadius'),inpaintRadiusVal=$('inpaintRadiusVal');
 const btnRemove=$('btnRemove'),btnUndo=$('btnUndo'),btnRedo=$('btnRedo');
 const btnCompare=$('btnCompare'),btnDownload=$('btnDownload');
 const btnBrush=$('btnBrush'),btnEraser=$('btnEraser');
@@ -206,6 +244,7 @@ displayCanvas.addEventListener('touchend',endPaint);
 btnBrush.addEventListener('click',()=>{tool='brush';btnBrush.classList.add('active');btnEraser.classList.remove('active')});
 btnEraser.addEventListener('click',()=>{tool='eraser';btnEraser.classList.add('active');btnBrush.classList.remove('active')});
 brushSizeInput.addEventListener('input',()=>brushSizeVal.textContent=brushSizeInput.value);
+inpaintRadiusInput.addEventListener('input',()=>inpaintRadiusVal.textContent=inpaintRadiusInput.value);
 
 function saveUndo(){
 const imgData=maskCtx.getImageData(0,0,maskCanvas.width,maskCanvas.height);
@@ -225,182 +264,129 @@ maskCtx.putImageData(redoStack.pop(),0,0);redrawDisplay();
 btnRedo.disabled=!redoStack.length;btnUndo.disabled=false;btnRemove.disabled=!hasMask();
 });
 
+// ===== INPAINTING with OpenCV =====
 btnRemove.addEventListener('click',async()=>{
+if(!cvReady){showToast('OpenCV 引擎仍在加载中，请稍候...');return}
 progressOverlay.classList.add('active');progressText.textContent='正在智能修复中...';
 await new Promise(r=>setTimeout(r,50));
 try{
-await inpaint();
+await inpaintOCV();
 btnCompare.disabled=false;btnDownload.disabled=false;
 statusBar.textContent='修复完成！点击「对比」查看效果，或「下载」保存结果';
 showToast('修复完成！');
-}catch(e){showToast('修复失败: '+e.message)}
+}catch(e){showToast('修复失败: '+e.message);console.error(e)}
 progressOverlay.classList.remove('active');
 });
 
-async function inpaint(){
+async function inpaintOCV(){
 const w=workCanvas.width,h=workCanvas.height;
-const srcData=workCtx.getImageData(0,0,w,h);
-const maskData=maskCtx.getImageData(0,0,w,h);
-const src=srcData.data,mask=maskData.data;
+const radius=parseInt(inpaintRadiusInput.value);
 
-// Build mask - which pixels to fill
-const isMask=new Uint8Array(w*h);
-let maskCount=0;
-for(let i=0;i<w*h;i++){if(mask[i*4+3]>30){isMask[i]=1;maskCount++}}
-if(maskCount===0)return;
+// Get source image as OpenCV Mat
+const srcImageData=workCtx.getImageData(0,0,w,h);
+const srcMat=cv.matFromImageData(srcImageData);
 
-// Use float array for precision during iterations
-const result=new Float32Array(src.length);
-for(let i=0;i<src.length;i++)result[i]=src[i];
+// Get mask - convert to grayscale single channel
+const maskImageData=maskCtx.getImageData(0,0,w,h);
+const maskRGBA=cv.matFromImageData(maskImageData);
+const maskGray=new cv.Mat();
+cv.cvtColor(maskRGBA,maskGray,cv.COLOR_RGBA2GRAY);
+maskRGBA.delete();
 
-// Track which pixels still need to be filled
-const filled=new Uint8Array(w*h);
-for(let i=0;i<w*h;i++)filled[i]=isMask[i]?0:1; // 0=needs fill, 1=already has color
+// Threshold mask to binary
+cv.threshold(maskGray,maskGray,30,255,cv.THRESH_BINARY);
 
-// ===== PHASE 1: BFS inpaint from boundary inward =====
-// Same algorithm as the Python reference: iteratively fill mask pixels
-// that have at least one non-mask (or already-filled) neighbor.
-// This preserves gradients naturally by propagating from the edges.
+// Dilate mask slightly for better edge coverage
+const kernel=cv.getStructuringElement(cv.MORPH_ELLIPSE,new cv.Size(3,3));
+cv.dilate(maskGray,maskGray,kernel);
+kernel.delete();
 
-progressText.textContent='BFS逐层填充...';
+// Run inpaint - TELEA algorithm (Fast Marching Method)
+progressText.textContent='Telea算法修复中...';
+await new Promise(r=>setTimeout(r,0));
+const dst1=new cv.Mat();
+cv.inpaint(srcMat,maskGray,dst1,radius,cv.INPAINT_TELEA);
+
+// Run inpaint - NS algorithm (Navier-Stokes)
+progressText.textContent='Navier-Stokes算法修复中...';
+await new Promise(r=>setTimeout(r,0));
+const dst2=new cv.Mat();
+cv.inpaint(srcMat,maskGray,dst2,radius,cv.INPAINT_NS);
+
+// Blend both results for best quality
+progressText.textContent='融合结果...';
 await new Promise(r=>setTimeout(r,0));
 
-const MAX_PASSES=50;
-for(let pass=0;pass<MAX_PASSES;pass++){
-let changed=0;
+// Read both results into ImageData
+const tmpCanvas1=document.createElement('canvas');tmpCanvas1.width=w;tmpCanvas1.height=h;
+const tmpCtx1=tmpCanvas1.getContext('2d');
+tmpCtx1.drawImage(cv.matToImageData ? null : null); // just to use cv
+const imgData1=new ImageData(w,h);
+const imgData2=new ImageData(w,h);
+const d1=dst1.data,d2=dst2.data;
+// dst1/dst2 are BGRA, convert to RGBA for ImageData
+for(let i=0;i<w*h;i++){
+const j=i*4;
+imgData1.data[j]=d1[j+2];imgData1.data[j+1]=d1[j+1];imgData1.data[j+2]=d1[j];imgData1.data[j+3]=255;
+imgData2.data[j]=d2[j+2];imgData2.data[j+1]=d2[j+1];imgData2.data[j+2]=d2[j];imgData2.data[j+3]=255;
+}
 
-// Find boundary mask pixels: mask pixels with at least 1 filled neighbor
-// Fill them with weighted average of filled neighbors
-for(let y=0;y<h;y++){
-for(let x=0;x<w;x++){
-const idx=y*w+x;
-if(filled[idx])continue; // already filled or not mask
-
-// Collect filled neighbors (8-connected for smoother results)
-let sR=0,sG=0,sB=0,sW=0;
-const neighbors=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
-const weights=[1,1,1,1,0.707,0.707,0.707,0.707]; // diagonal gets less weight
-
-for(let n=0;n<8;n++){
-const ny=y+neighbors[n][0],nx=x+neighbors[n][1];
-if(ny>=0&&ny<h&&nx>=0&&nx<w&&filled[ny*w+nx]){
-const pi=(ny*w+nx)*4;
-const wt=weights[n];
-sR+=result[pi]*wt;
-sG+=result[pi+1]*wt;
-sB+=result[pi+2]*wt;
-sW+=wt;
+// Blend: average of Telea + NS in mask region only
+const maskData=maskGray.data;
+const srcPixels=srcImageData.data;
+const finalData=new ImageData(w,h);
+for(let i=0;i<w*h;i++){
+const j=i*4;
+if(maskData[i]>0){
+// In mask: blend both algorithms
+finalData.data[j]=Math.round((imgData1.data[j]+imgData2.data[j])/2);
+finalData.data[j+1]=Math.round((imgData1.data[j+1]+imgData2.data[j+1])/2);
+finalData.data[j+2]=Math.round((imgData1.data[j+2]+imgData2.data[j+2])/2);
+finalData.data[j+3]=255;
+}else{
+// Keep original
+finalData.data[j]=srcPixels[j];
+finalData.data[j+1]=srcPixels[j+1];
+finalData.data[j+2]=srcPixels[j+2];
+finalData.data[j+3]=srcPixels[j+3];
 }
 }
 
-if(sW>0){
-result[idx*4]=sR/sW;
-result[idx*4+1]=sG/sW;
-result[idx*4+2]=sB/sW;
-result[idx*4+3]=255;
-filled[idx]=1;
-changed++;
-}
-}
-}
-
-if(changed===0)break;
-progressText.textContent='BFS填充... 第'+(pass+1)+'轮 填充'+changed+'像素';
-if(pass%3===0)await new Promise(r=>setTimeout(r,0));
-}
-
-// ===== PHASE 2: Gradient-aware refinement =====
-// Do extra smoothing passes on the filled region to reduce any artifacts
-// but use GRADIENT PRESERVATION: blend along gradient direction, not across it
-
-progressText.textContent='渐变优化...';
+// Apply multi-pass refinement: run inpaint again on the blended result
+// This second pass refines the boundary transitions
+progressText.textContent='二次精修...';
 await new Promise(r=>setTimeout(r,0));
 
-for(let pass=0;pass<5;pass++){
-const prev=new Float32Array(result);
-for(let y=1;y<h-1;y++){
-for(let x=1;x<w-1;x++){
-const idx=y*w+x;
-if(!isMask[idx])continue;
+// Create refined source mat from blended result
+const refinedMat=cv.matFromImageData(finalData);
+const dst3=new cv.Mat();
+cv.inpaint(refinedMat,maskGray,dst3,radius,cv.INPAINT_TELEA);
+refinedMat.delete();
 
-// Compute local gradient direction
-const pi=idx*4;
-const gx_r=prev[((y)*w+(x+1))*4]-prev[((y)*w+(x-1))*4];
-const gy_r=prev[((y+1)*w+x)*4]-prev[((y-1)*w+x)*4];
-const gx_g=prev[((y)*w+(x+1))*4+1]-prev[((y)*w+(x-1))*4+1];
-const gy_g=prev[((y+1)*w+x)*4+1]-prev[((y-1)*w+x)*4+1];
-const gx_b=prev[((y)*w+(x+1))*4+2]-prev[((y)*w+(x-1))*4+2];
-const gy_b=prev[((y+1)*w+x)*4+2]-prev[((y-1)*w+x)*4+2];
-
-// Weighted average of 4-connected neighbors
-for(let c=0;c<3;c++){
-const avg=(prev[((y-1)*w+x)*4+c]+prev[((y+1)*w+x)*4+c]+prev[(y*w+(x-1))*4+c]+prev[(y*w+(x+1))*4+c])*0.25;
-// Blend: keep 60% of current + 40% of average (light smoothing)
-result[pi+c]=result[pi+c]*0.6+avg*0.4;
-}
-}
+// Extract refined result
+const finalRefined=new ImageData(w,h);
+const d3=dst3.data;
+for(let i=0;i<w*h;i++){
+const j=i*4;
+if(maskData[i]>0){
+finalRefined.data[j]=d3[j+2];finalRefined.data[j+1]=d3[j+1];finalRefined.data[j+2]=d3[j];finalRefined.data[j+3]=255;
+}else{
+finalRefined.data[j]=srcPixels[j];finalRefined.data[j+1]=srcPixels[j+1];finalRefined.data[j+2]=srcPixels[j+2];finalRefined.data[j+3]=srcPixels[j+3];
 }
 }
 
-// ===== PHASE 3: Edge feathering =====
-// Smooth transition at the mask boundary to avoid hard edges
-progressText.textContent='边缘融合...';
-await new Promise(r=>setTimeout(r,0));
+// Write to work canvas
+workCtx.putImageData(finalRefined,0,0);
 
-const FEATHER=6;
-for(let y=0;y<h;y++){
-for(let x=0;x<w;x++){
-const idx=y*w+x;
-if(!isMask[idx])continue;
-
-// Find distance to nearest non-mask pixel
-let minD=FEATHER+1;
-for(let dy=-FEATHER;dy<=FEATHER&&minD>0;dy++){
-for(let dx=-FEATHER;dx<=FEATHER&&minD>0;dx++){
-const nx=x+dx,ny=y+dy;
-if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
-minD=Math.min(minD,Math.sqrt(dx*dx+dy*dy));
-}
-}
-}
-if(minD>FEATHER)continue;
-
-// At the very edge, blend with surrounding original pixels
-const alpha=Math.pow(minD/FEATHER,1.5); // 0 at edge, 1 inside
-if(alpha>=0.99)continue;
-
-// Sample nearby original pixels for blending
-let lr=0,lg=0,lb=0,lw=0;
-for(let dy=-FEATHER;dy<=FEATHER;dy++){
-for(let dx=-FEATHER;dx<=FEATHER;dx++){
-const nx=x+dx,ny=y+dy;
-if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
-const pi=(ny*w+nx)*4;
-const d=Math.max(1,Math.sqrt(dx*dx+dy*dy));
-const wt=1/d;
-lr+=src[pi]*wt;lg+=src[pi+1]*wt;lb+=src[pi+2]*wt;lw+=wt;
-}
-}
-}
-if(lw>0){
-lr/=lw;lg/=lw;lb/=lw;
-const pi=idx*4;
-result[pi]=result[pi]*alpha+lr*(1-alpha);
-result[pi+1]=result[pi+1]*alpha+lg*(1-alpha);
-result[pi+2]=result[pi+2]*alpha+lb*(1-alpha);
-}
-}
-}
-
-// Write result
-const outData=workCtx.createImageData(w,h);
-for(let i=0;i<w*h*4;i++)outData.data[i]=Math.max(0,Math.min(255,Math.round(result[i])));
-workCtx.putImageData(outData,0,0);
-
+// Store result
 resultCanvas=document.createElement('canvas');resultCanvas.width=w;resultCanvas.height=h;
-resultCanvas.getContext('2d').putImageData(outData,0,0);
+resultCanvas.getContext('2d').putImageData(finalRefined,0,0);
 
+// Update display
 dCtx.drawImage(workCanvas,0,0,displayCanvas.width,displayCanvas.height);
+
+// Cleanup OpenCV mats
+srcMat.delete();maskGray.delete();dst1.delete();dst2.delete();dst3.delete();
 maskCtx.clearRect(0,0,w,h);
 undoStack=[];redoStack=[];btnUndo.disabled=true;btnRedo.disabled=true;btnRemove.disabled=true;
 }
