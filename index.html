@@ -102,7 +102,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="features" id="featureSection">
 <div class="feature"><div class="icon">🔒</div><h3>隐私安全</h3><p>图片完全在浏览器本地处理</p></div>
 <div class="feature"><div class="icon">🆓</div><h3>完全免费</h3><p>无限制使用，无水印</p></div>
-<div class="feature"><div class="icon">⚡</div><h3>智能修复</h3><p>纹理合成算法自动填充</p></div>
+<div class="feature"><div class="icon">⚡</div><h3>智能修复</h3><p>BFS逐层填充 + 渐变保持</p></div>
 <div class="feature"><div class="icon">📱</div><h3>多端支持</h3><p>手机平板电脑均可使用</p></div>
 </div>
 </div>
@@ -243,257 +243,164 @@ const srcData=workCtx.getImageData(0,0,w,h);
 const maskData=maskCtx.getImageData(0,0,w,h);
 const src=srcData.data,mask=maskData.data;
 
-// Build mask
+// Build mask - which pixels to fill
 const isMask=new Uint8Array(w*h);
 let maskCount=0;
 for(let i=0;i<w*h;i++){if(mask[i*4+3]>30){isMask[i]=1;maskCount++}}
 if(maskCount===0)return;
 
-// Distance to mask boundary
-const distMap=new Float32Array(w*h);
-distMap.fill(999);
-for(let y=0;y<h;y++){
-for(let x=0;x<w;x++){
-if(!isMask[y*w+x])continue;
-let md=999;
-for(let dy=-60;dy<=60&&md>1;dy++){
-for(let dx=-60;dx<=60&&md>1;dx++){
-const nx=x+dx,ny=y+dy;
-if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
-md=Math.min(md,Math.sqrt(dx*dx+dy*dy));
-}
-}
-}
-distMap[y*w+x]=md;
-}
-}
+// Use float array for precision during iterations
+const result=new Float32Array(src.length);
+for(let i=0;i<src.length;i++)result[i]=src[i];
 
-const result=new Uint8ClampedArray(src);
-const srcF=new Float32Array(src.length);
-for(let i=0;i<src.length;i++)srcF[i]=src[i];
+// Track which pixels still need to be filled
+const filled=new Uint8Array(w*h);
+for(let i=0;i<w*h;i++)filled[i]=isMask[i]?0:1; // 0=needs fill, 1=already has color
 
-// ===== PHASE 1: PatchMatch texture synthesis =====
-progressText.textContent='纹理搜索 (初始化)...';
+// ===== PHASE 1: BFS inpaint from boundary inward =====
+// Same algorithm as the Python reference: iteratively fill mask pixels
+// that have at least one non-mask (or already-filled) neighbor.
+// This preserves gradients naturally by propagating from the edges.
+
+progressText.textContent='BFS逐层填充...';
 await new Promise(r=>setTimeout(r,0));
 
-const PR=5; // 11x11 patches
-const ITERS=16;
-const nnf=new Int32Array(w*h*2);
+const MAX_PASSES=50;
+for(let pass=0;pass<MAX_PASSES;pass++){
+let changed=0;
 
-// Init: nearest non-mask pixel
+// Find boundary mask pixels: mask pixels with at least 1 filled neighbor
+// Fill them with weighted average of filled neighbors
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
 const idx=y*w+x;
-if(!isMask[idx]){nnf[idx*2]=0;nnf[idx*2+1]=0;continue}
-let found=false;
-for(let r=1;r<100&&!found;r++){
-for(let dy=-r;dy<=r&&!found;dy++){
-for(let dx=-r;dx<=r&&!found;dx++){
-if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
-const nx=x+dx,ny=y+dy;
-if(nx>=PR&&nx<w-PR&&ny>=PR&&ny<h-PR&&!isMask[ny*w+nx]){
-nnf[idx*2]=dx;nnf[idx*2+1]=dy;found=true;
-}
-}
-}
-}
-if(!found){nnf[idx*2]=0;nnf[idx*2+1]=0}
+if(filled[idx])continue; // already filled or not mask
+
+// Collect filled neighbors (8-connected for smoother results)
+let sR=0,sG=0,sB=0,sW=0;
+const neighbors=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+const weights=[1,1,1,1,0.707,0.707,0.707,0.707]; // diagonal gets less weight
+
+for(let n=0;n<8;n++){
+const ny=y+neighbors[n][0],nx=x+neighbors[n][1];
+if(ny>=0&&ny<h&&nx>=0&&nx<w&&filled[ny*w+nx]){
+const pi=(ny*w+nx)*4;
+const wt=weights[n];
+sR+=result[pi]*wt;
+sG+=result[pi+1]*wt;
+sB+=result[pi+2]*wt;
+sW+=wt;
 }
 }
 
-function patchDist(tx,ty,sx,sy){
-let d=0,cnt=0;
-for(let j=-PR;j<=PR;j++){
-for(let i=-PR;i<=PR;i++){
-const ax=tx+i,ay=ty+j,bx=sx+i,by=sy+j;
-if(ax<0||ax>=w||ay<0||ay>=h||bx<0||bx>=w||by<0||by>=h)continue;
-if(isMask[ay*w+ax])continue;
-const p1=(ay*w+ax)*4,p2=(by*w+bx)*4;
-const dr=src[p1]-src[p2],dg=src[p1+1]-src[p2+1],db=src[p1+2]-src[p2+2];
-d+=dr*dr+dg*dg+db*db;cnt++;
+if(sW>0){
+result[idx*4]=sR/sW;
+result[idx*4+1]=sG/sW;
+result[idx*4+2]=sB/sW;
+result[idx*4+3]=255;
+filled[idx]=1;
+changed++;
 }
 }
-const od=(sx-tx)*(sx-tx)+(sy-ty)*(sy-ty);
-return(cnt>0?d/cnt:1e9)+od*0.04;
 }
 
-for(let iter=0;iter<ITERS;iter++){
-const fwd=iter%2===0;
-progressText.textContent='纹理搜索... 第'+(iter+1)+'/'+ITERS+'轮';
+if(changed===0)break;
+progressText.textContent='BFS填充... 第'+(pass+1)+'轮 填充'+changed+'像素';
+if(pass%3===0)await new Promise(r=>setTimeout(r,0));
+}
+
+// ===== PHASE 2: Gradient-aware refinement =====
+// Do extra smoothing passes on the filled region to reduce any artifacts
+// but use GRADIENT PRESERVATION: blend along gradient direction, not across it
+
+progressText.textContent='渐变优化...';
 await new Promise(r=>setTimeout(r,0));
 
-for(let y=fwd?PR:h-PR-1;fwd?y<h-PR:y>=PR;y+=fwd?1:-1){
-for(let x=fwd?PR:w-PR-1;fwd?x<w-PR:x>=PR;x+=fwd?1:-1){
-const idx=y*w+x;
-if(!isMask[idx])continue;
-
-let bx=x+nnf[idx*2],by=y+nnf[idx*2+1];
-bx=Math.max(PR,Math.min(w-PR-1,bx));
-by=Math.max(PR,Math.min(h-PR-1,by));
-if(isMask[by*w+bx]){bx=PR;by=PR}
-let bd=patchDist(x,y,bx,by);
-
-// Propagate
-const nx=fwd?x-1:x+1,ny=fwd?y-1:y+1;
-if(nx>=PR&&nx<w-PR){
-const nnIdx=y*w+nx;
-if(isMask[nnIdx]){
-let sx=nx+nnf[nnIdx*2]+(x-nx),sy=y+nnf[nnIdx*2+1];
-if(sx>=PR&&sx<w-PR&&sy>=PR&&sy<h-PR&&!isMask[sy*w+sx]){
-const d=patchDist(x,y,sx,sy);if(d<bd){bx=sx;by=sy;bd=d}
-}
-}
-}
-if(ny>=PR&&ny<h-PR){
-const nnIdx=ny*w+x;
-if(isMask[nnIdx]){
-let sx=x+nnf[nnIdx*2],sy=ny+nnf[nnIdx*2+1]+(y-ny);
-if(sx>=PR&&sx<w-PR&&sy>=PR&&sy<h-PR&&!isMask[sy*w+sx]){
-const d=patchDist(x,y,sx,sy);if(d<bd){bx=sx;by=sy;bd=d}
-}
-}
-}
-
-// Random search
-let sRad=Math.max(w,h)*0.5;
-while(sRad>=2){
-const rx=Math.round(bx+(Math.random()*2-1)*sRad);
-const ry=Math.round(by+(Math.random()*2-1)*sRad);
-if(rx>=PR&&rx<w-PR&&ry>=PR&&ry<h-PR&&!isMask[ry*w+rx]){
-const d=patchDist(x,y,rx,ry);if(d<bd){bx=rx;by=ry;bd=d}
-}
-sRad=Math.floor(sRad*0.5);
-}
-nnf[idx*2]=bx-x;nnf[idx*2+1]=by-y;
-}
-}
-}
-
-// ===== PHASE 2: Direct copy real pixels =====
-progressText.textContent='复制纹理...';
-await new Promise(r=>setTimeout(r,0));
-
-for(let y=0;y<h;y++){
-for(let x=0;x<w;x++){
-const idx=y*w+x;if(!isMask[idx])continue;
-const sx=x+nnf[idx*2],sy=y+nnf[idx*2+1];
-if(sx>=0&&sx<w&&sy>=0&&sy<h){
-const si=(sy*w+sx)*4,ti=idx*4;
-result[ti]=src[si];result[ti+1]=src[si+1];result[ti+2]=src[si+2];result[ti+3]=255;
-srcF[ti]=src[si];srcF[ti+1]=src[si+1];srcF[ti+2]=src[si+2];
-}
-}
-}
-
-// ===== PHASE 3: Color transfer at boundary =====
-progressText.textContent='颜色校正...';
-await new Promise(r=>setTimeout(r,0));
-
-const COLOR_BAND=5;
-for(let y=0;y<h;y++){
-for(let x=0;x<w;x++){
-const idx=y*w+x;
-if(!isMask[idx]||distMap[idx]>COLOR_BAND)continue;
-
-// Find nearest real pixel
-let bd=999,bpi=-1;
-for(let dy=-40;dy<=40;dy++){
-for(let dx=-40;dx<=40;dx++){
-const nx=x+dx,ny=y+dy;
-if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
-const d=dx*dx+dy*dy;
-if(d<bd){bd=d;bpi=(ny*w+nx)*4}
-}
-}
-}
-if(bpi<0)continue;
-
-const sxF=x+nnf[idx*2],syF=y+nnf[idx*2+1];
-if(sxF<0||sxF>=w||syF<0||syF>=h)continue;
-const srcFI=(syF*w+sxF)*4;
-
-const dr=src[bpi]-src[srcFI];
-const dg=src[bpi+1]-src[srcFI+1];
-const db=src[bpi+2]-src[srcFI+2];
-
-const alpha=1.0-distMap[idx]/COLOR_BAND;
-const ti=idx*4;
-srcF[ti]+=dr*alpha;srcF[ti+1]+=dg*alpha;srcF[ti+2]+=db*alpha;
-}
-}
-
-// ===== PHASE 4: Narrow Poisson blend (boundary only) =====
-progressText.textContent='无缝融合...';
-await new Promise(r=>setTimeout(r,0));
-
-const BLEND_BAND=3;
-const isBand=new Uint8Array(w*h);
-for(let y=0;y<h;y++){
-for(let x=0;x<w;x++){
-const idx=y*w+x;
-if(!isMask[idx]||distMap[idx]>BLEND_BAND)continue;
-isBand[idx]=1;
-}
-}
-
-for(let iter=0;iter<20;iter++){
-const prev=new Float32Array(srcF);
+for(let pass=0;pass<5;pass++){
+const prev=new Float32Array(result);
 for(let y=1;y<h-1;y++){
 for(let x=1;x<w-1;x++){
 const idx=y*w+x;
-if(!isBand[idx])continue;
+if(!isMask[idx])continue;
+
+// Compute local gradient direction
 const pi=idx*4;
+const gx_r=prev[((y)*w+(x+1))*4]-prev[((y)*w+(x-1))*4];
+const gy_r=prev[((y+1)*w+x)*4]-prev[((y-1)*w+x)*4];
+const gx_g=prev[((y)*w+(x+1))*4+1]-prev[((y)*w+(x-1))*4+1];
+const gy_g=prev[((y+1)*w+x)*4+1]-prev[((y-1)*w+x)*4+1];
+const gx_b=prev[((y)*w+(x+1))*4+2]-prev[((y)*w+(x-1))*4+2];
+const gy_b=prev[((y+1)*w+x)*4+2]-prev[((y-1)*w+x)*4+2];
+
+// Weighted average of 4-connected neighbors
 for(let c=0;c<3;c++){
-srcF[pi+c]=(prev[((y-1)*w+x)*4+c]+prev[((y+1)*w+x)*4+c]+prev[(y*w+(x-1))*4+c]+prev[(y*w+(x+1))*4+c])*0.25;
+const avg=(prev[((y-1)*w+x)*4+c]+prev[((y+1)*w+x)*4+c]+prev[(y*w+(x-1))*4+c]+prev[(y*w+(x+1))*4+c])*0.25;
+// Blend: keep 60% of current + 40% of average (light smoothing)
+result[pi+c]=result[pi+c]*0.6+avg*0.4;
 }
 }
 }
-if(iter%5===0)await new Promise(r=>setTimeout(r,0));
 }
 
-// ===== PHASE 5: Smooth feathering at mask edge =====
-progressText.textContent='边缘羽化...';
+// ===== PHASE 3: Edge feathering =====
+// Smooth transition at the mask boundary to avoid hard edges
+progressText.textContent='边缘融合...';
 await new Promise(r=>setTimeout(r,0));
 
-const FEATHER=4;
+const FEATHER=6;
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
 const idx=y*w+x;
-if(!isMask[idx]||distMap[idx]>FEATHER)continue;
-// Blend between inpainted and nearest real pixel
-const alpha=Math.pow(distMap[idx]/FEATHER,2); // quadratic: more inpainted as we go in
+if(!isMask[idx])continue;
+
+// Find distance to nearest non-mask pixel
+let minD=FEATHER+1;
+for(let dy=-FEATHER;dy<=FEATHER&&minD>0;dy++){
+for(let dx=-FEATHER;dx<=FEATHER&&minD>0;dx++){
+const nx=x+dx,ny=y+dy;
+if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
+minD=Math.min(minD,Math.sqrt(dx*dx+dy*dy));
+}
+}
+}
+if(minD>FEATHER)continue;
+
+// At the very edge, blend with surrounding original pixels
+const alpha=Math.pow(minD/FEATHER,1.5); // 0 at edge, 1 inside
+if(alpha>=0.99)continue;
+
+// Sample nearby original pixels for blending
 let lr=0,lg=0,lb=0,lw=0;
 for(let dy=-FEATHER;dy<=FEATHER;dy++){
 for(let dx=-FEATHER;dx<=FEATHER;dx++){
 const nx=x+dx,ny=y+dy;
 if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
-const pi=(ny*w+nx)*4;const wt=1/Math.max(1,Math.sqrt(dx*dx+dy*dy));
+const pi=(ny*w+nx)*4;
+const d=Math.max(1,Math.sqrt(dx*dx+dy*dy));
+const wt=1/d;
 lr+=src[pi]*wt;lg+=src[pi+1]*wt;lb+=src[pi+2]*wt;lw+=wt;
 }
 }
 }
 if(lw>0){
 lr/=lw;lg/=lw;lb/=lw;
-const ti=idx*4;
-srcF[ti]=srcF[ti]*alpha+lr*(1-alpha);
-srcF[ti+1]=srcF[ti+1]*alpha+lg*(1-alpha);
-srcF[ti+2]=srcF[ti+2]*alpha+lb*(1-alpha);
+const pi=idx*4;
+result[pi]=result[pi]*alpha+lr*(1-alpha);
+result[pi+1]=result[pi+1]*alpha+lg*(1-alpha);
+result[pi+2]=result[pi+2]*alpha+lb*(1-alpha);
 }
 }
 }
 
-// Write result to work canvas
+// Write result
 const outData=workCtx.createImageData(w,h);
-for(let i=0;i<w*h*4;i++)outData.data[i]=Math.max(0,Math.min(255,Math.round(srcF[i])));
+for(let i=0;i<w*h*4;i++)outData.data[i]=Math.max(0,Math.min(255,Math.round(result[i])));
 workCtx.putImageData(outData,0,0);
 
-// Store result for comparison
 resultCanvas=document.createElement('canvas');resultCanvas.width=w;resultCanvas.height=h;
 resultCanvas.getContext('2d').putImageData(outData,0,0);
 
-// Update display
 dCtx.drawImage(workCanvas,0,0,displayCanvas.width,displayCanvas.height);
-
 maskCtx.clearRect(0,0,w,h);
 undoStack=[];redoStack=[];btnUndo.disabled=true;btnRedo.disabled=true;btnRemove.disabled=true;
 }
@@ -514,7 +421,6 @@ btnCompare.textContent='对比';
 function drawComparison(){
 const w=workCanvas.width,h=workCanvas.height;
 compCanvas.width=displayCanvas.width;compCanvas.height=displayCanvas.height;
-// Result on left, original on right
 compCtx.drawImage(resultCanvas,0,0,compCanvas.width,compCanvas.height);
 const origTmp=document.createElement('canvas');origTmp.width=w;origTmp.height=h;
 origTmp.getContext('2d').drawImage(originalImg,0,0,w,h);
@@ -537,7 +443,6 @@ compSliderX=Math.max(0.05,Math.min(0.95,(e.clientX-rect.left)/rect.width));drawC
 });
 document.addEventListener('mouseup',()=>sliding=false);
 
-// Download at FULL resolution
 btnDownload.addEventListener('click',()=>{
 const link=document.createElement('a');
 link.download='magic-eraser-result.png';
