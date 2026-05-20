@@ -288,53 +288,83 @@ const srcData=ctx.getImageData(0,0,w,h);
 const maskData=maskCtx.getImageData(0,0,w,h);
 const src=srcData.data,mask=maskData.data;
 
-// Build mask
-const isMask=new Uint8Array(w*h);
+// Build mask with dilation (expand mask by 3px for better edge handling)
+const isMaskRaw=new Uint8Array(w*h);
 let maskCount=0;
-for(let i=0;i<w*h;i++){if(mask[i*4+3]>30){isMask[i]=1;maskCount++}}
+for(let i=0;i<w*h;i++){if(mask[i*4+3]>30){isMaskRaw[i]=1;maskCount++}}
 if(maskCount===0)return;
+
+// Dilate mask by 3 pixels to ensure we capture watermark edges
+const dilateR=3;
+const isMask=new Uint8Array(w*h);
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+if(!isMaskRaw[y*w+x])continue;
+for(let dy=-dilateR;dy<=dilateR;dy++)for(let dx=-dilateR;dx<=dilateR;dx++){
+const nx=x+dx,ny=y+dy;
+if(nx>=0&&nx<w&&ny>=0&&ny<h)isMask[ny*w+nx]=1;
+}
+}
+maskCount=0;for(let i=0;i<w*h;i++)maskCount+=isMask[i];
 
 const result=new Float32Array(src.length);
 for(let i=0;i<src.length;i++)result[i]=src[i];
 
-// filled[i]=1 means pixel has a known color (non-mask or already inpainted)
+// === PHASE 1: Compute distance transform for feathering ===
+const distMap=new Float32Array(w*h).fill(1e9);
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+if(!isMask[y*w+x])continue;
+let minD=1e9;
+for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+const nx=x+dx,ny=y+dy;
+if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
+minD=Math.min(minD,Math.sqrt(dx*dx+dy*dy));
+}
+}
+distMap[y*w+x]=minD;
+}
+const maxDist=dilateR+2;
+
+// === PHASE 2: Large-radius Gaussian-weighted BFS inpainting ===
 const filled=new Uint8Array(w*h);
 for(let i=0;i<w*h;i++)filled[i]=isMask[i]?0:1;
 
-const dx=[-1,0,1,-1,1,-1,0,1];
-const dy=[-1,-1,-1,0,0,1,1,1];
-const wt_d=[1.414,1,1.414,1,1,1.414,1,1.414];
-
-// BFS from mask border inward - process pixels closest to known area first
 const queue=[];
 const inQ=new Uint8Array(w*h);
 
-// Find mask border pixels (mask pixels adjacent to at least 1 known pixel)
+// Find mask border pixels
 for(let y=0;y<h;y++)for(let x=0;x<w;x++){
 const idx=y*w+x;
 if(!isMask[idx])continue;
-for(let k=0;k<8;k++){
-const nx=x+dx[k],ny=y+dy[k];
+for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+const nx=x+dx,ny=y+dy;
 if(nx>=0&&nx<w&&ny>=0&&ny<h&&filled[ny*w+nx]){
 queue.push(idx);inQ[idx]=1;break;
 }
+if(inQ[idx])break;
 }
 }
 
+const R=12; // sampling radius
+const sigma2=2*R*R; // Gaussian variance
 let processed=0;
 let qi=0;
+
 while(qi<queue.length){
 const idx=queue[qi++];
 const x=idx%w,y=(idx-x)/w;
 
-// Weighted average from known neighbors
+// Sample from ALL known pixels within radius R using Gaussian weights
 let sr=0,sg=0,sb=0,sw=0;
-for(let k=0;k<8;k++){
-const nx=x+dx[k],ny=y+dy[k];
-if(nx<0||nx>=w||ny<0||ny>=h)continue;
+const x0=Math.max(0,x-R),x1=Math.min(w-1,x+R);
+const y0=Math.max(0,y-R),y1=Math.min(h-1,y+R);
+for(let ny=y0;ny<=y1;ny++){
+for(let nx=x0;nx<=x1;nx++){
 const ni=ny*w+nx;
-if(filled[ni]){
-const wt=1/wt_d[k];
+if(!filled[ni])continue;
+const ddx=nx-x,ddy=ny-y;
+const d2=ddx*ddx+ddy*ddy;
+if(d2>R*R)continue;
+const wt=Math.exp(-d2/sigma2);
 sr+=result[ni*4]*wt;sg+=result[ni*4+1]*wt;sb+=result[ni*4+2]*wt;sw+=wt;
 }
 }
@@ -343,66 +373,143 @@ result[idx*4]=sr/sw;result[idx*4+1]=sg/sw;result[idx*4+2]=sb/sw;
 }
 filled[idx]=1;
 
-// Add unfilled mask neighbors to queue
-for(let k=0;k<8;k++){
-const nx=x+dx[k],ny=y+dy[k];
+// Add unfilled mask neighbors
+for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+const nx=x+dx,ny=y+dy;
 if(nx<0||nx>=w||ny<0||ny>=h)continue;
 const ni=ny*w+nx;
 if(isMask[ni]&&!filled[ni]&&!inQ[ni]){queue.push(ni);inQ[ni]=1}
 }
 
 processed++;
-if(processed%5000===0){
-const pct=Math.min(99,Math.round(processed/maskCount*100));
+if(processed%3000===0){
+const pct=Math.min(90,Math.round(processed/maskCount*100));
 progressText.textContent=`正在智能修复中... ${pct}%`;
 await new Promise(r=>setTimeout(r,0));
 }
 }
 
-// Smoothing: 3 passes over mask region
-for(let pass=0;pass<3;pass++){
-for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+// === PHASE 3: Multi-pass Gaussian smoothing over mask region ===
+progressText.textContent='正在平滑处理...';
+await new Promise(r=>setTimeout(r,0));
+
+const smoothR=4;
+const sSigma2=2*smoothR*smoothR;
+// Precompute Gaussian kernel
+const sK=[];
+for(let dy=-smoothR;dy<=smoothR;dy++)for(let dx=-smoothR;dx<=smoothR;dx++){
+const d2=dx*dx+dy*dy;
+if(d2<=smoothR*smoothR)sK.push({dx,dy,wt:Math.exp(-d2/sSigma2)});
+}
+
+for(let pass=0;pass<5;pass++){
+const tmp=new Float32Array(result.length);
+for(let i=0;i<result.length;i++)tmp[i]=result[i];
+for(let y=smoothR;y<h-smoothR;y++){
+for(let x=smoothR;x<w-smoothR;x++){
 const i=y*w+x;
 if(!isMask[i])continue;
 let sr=0,sg=0,sb=0,sw=0;
-for(let k=0;k<8;k++){
-const nx=x+dx[k],ny=y+dy[k];
-const ni=ny*w+nx;
-const wt=1/wt_d[k];
-sr+=result[ni*4]*wt;sg+=result[ni*4+1]*wt;sb+=result[ni*4+2]*wt;sw+=wt;
+for(let k=0;k<sK.length;k++){
+const ni=(y+sK[k].dy)*w+(x+sK[k].dx);
+const wt=sK[k].wt;
+sr+=tmp[ni*4]*wt;sg+=tmp[ni*4+1]*wt;sb+=tmp[ni*4+2]*wt;sw+=wt;
 }
 if(sw>0){result[i*4]=sr/sw;result[i*4+1]=sg/sw;result[i*4+2]=sb/sw}
 }
 }
+if(pass%2===0){
+progressText.textContent=`正在平滑处理... 第${pass+1}/5轮`;
+await new Promise(r=>setTimeout(r,0));
+}
+}
 
-// Add subtle texture noise
-for(let i=0;i<w*h;i++){
+// === PHASE 4: Texture-aware noise injection ===
+// Analyze local texture variance from surrounding non-mask area
+progressText.textContent='正在纹理合成...';
+await new Promise(r=>setTimeout(r,0));
+
+const texR=6;
+// Compute local variance map for non-mask border pixels
+const noiseMap=new Float32Array(w*h);
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+if(!isMask[y*w+x])continue;
+let meanR=0,meanG=0,meanB=0,cnt=0;
+const x0=Math.max(0,x-texR*2),x1=Math.min(w-1,x+texR*2);
+const y0=Math.max(0,y-texR*2),y1=Math.min(h-1,y+texR*2);
+for(let ny=y0;ny<=y1;ny++)for(let nx=x0;nx<=x1;nx++){
+if(isMask[ny*w+nx])continue;
+const ni=ny*w+nx;
+meanR+=result[ni*4];meanG+=result[ni*4+1];meanB+=result[ni*4+2];cnt++;
+}
+if(cnt>0){meanR/=cnt;meanG/=cnt;meanB/=cnt}
+let vr=0,vg=0,vb=0;cnt=0;
+for(let ny=y0;ny<=y1;ny++)for(let nx=x0;nx<=x1;nx++){
+if(isMask[ny*w+nx])continue;
+const ni=ny*w+nx;
+vr+=(result[ni*4]-meanR)**2;vg+=(result[ni*4+1]-meanG)**2;vb+=(result[ni*4+2]-meanB)**2;cnt++;
+}
+if(cnt>1){
+noiseMap[y*w+x]=Math.sqrt((vr+vg+vb)/(3*(cnt-1)));
+}
+}
+// Apply spatially-correlated noise matching local texture
+const avgNoise=noiseMap.reduce((a,b,i)=>isMask[i]?a+b:a,0)/maskCount;
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+const i=y*w+x;
 if(!isMask[i])continue;
-const n=(Math.random()-0.5)*4;
+const localStd=Math.max(noiseMap[i],avgNoise)*0.4;
+const n=(Math.random()-0.5)*localStd*2;
 result[i*4]=Math.max(0,Math.min(255,result[i*4]+n));
 result[i*4+1]=Math.max(0,Math.min(255,result[i*4+1]+n));
 result[i*4+2]=Math.max(0,Math.min(255,result[i*4+2]+n));
 }
 
-// Feather mask edges: blend 2px border with original for seamless transition
-const feather=2;
-for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+// === PHASE 5: Gradient-domain seamless blending (Poisson-like) ===
+// Iterative Laplacian smoothing: solve for gradient consistency
+progressText.textContent='正在梯度融合...';
+await new Promise(r=>setTimeout(r,0));
+
+const origSrc=new Float32Array(src.length);
+for(let i=0;i<src.length;i++)origSrc[i]=src[i];
+
+// Jacobi iteration for gradient-domain blending
+for(let iter=0;iter<20;iter++){
+const prev=new Float32Array(result.length);
+for(let i=0;i<result.length;i++)prev[i]=result[i];
+for(let y=1;y<h-1;y++){
+for(let x=1;x<w-1;x++){
 const i=y*w+x;
 if(!isMask[i])continue;
-// Check if this is a border pixel of the mask
-let border=false;
-for(let k=0;k<8;k++){
-const nx=x+dx[k],ny=y+dy[k];
-if(nx<0||nx>=w||ny<0||ny>=h||!isMask[ny*w+nx]){border=true;break}
-}
-if(border){
-for(let f=0;f<feather;f++){
-const alpha=0.3+0.35*f;
-result[i*4]=result[i*4]*(1-alpha)+src[i*4]*alpha;
-result[i*4+1]=result[i*4+1]*(1-alpha)+src[i*4+1]*alpha;
-result[i*4+2]=result[i*4+2]*(1-alpha)+src[i*4+2]*alpha;
+const d=distMap[i];
+if(d>maxDist)continue;
+const pi=(i)*4;
+const upi=((y-1)*w+x)*4, dni=((y+1)*w+x)*4;
+const lti=(y*w+(x-1))*4, rti=(y*w+(x+1))*4;
+result[pi]=(prev[upi]+prev[dni]+prev[lti]+prev[rti])/4;
+result[pi+1]=(prev[upi+1]+prev[dni+1]+prev[lti+1]+prev[rti+1])/4;
+result[pi+2]=(prev[upi+2]+prev[dni+2]+prev[lti+2]+prev[rti+2])/4;
 }
 }
+if(iter%5===0)await new Promise(r=>setTimeout(r,0));
+}
+
+// === PHASE 6: Adaptive feathering at mask boundary ===
+progressText.textContent='正在边缘融合...';
+await new Promise(r=>setTimeout(r,0));
+
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+const i=y*w+x;
+if(!isMask[i]||!isMaskRaw[y*w+x])continue;
+const d=distMap[i];
+if(d>=maxDist)continue;
+// Smooth alpha blend based on distance to non-mask edge
+const alpha=1.0-(d/maxDist); // 0 at edge, 1 at interior
+const a=alpha*alpha*(3-2*alpha); // smoothstep
+// Blend between original (at edge) and inpainted (interior)
+result[i*4]=result[i*4]*a+origSrc[i*4]*(1-a);
+result[i*4+1]=result[i*4+1]*a+origSrc[i*4+1]*(1-a);
+result[i*4+2]=result[i*4+2]*a+origSrc[i*4+2]*(1-a);
 }
 
 // Write result
