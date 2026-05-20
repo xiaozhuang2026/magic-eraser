@@ -19,7 +19,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .btn-primary:hover{opacity:.85;transform:translateY(-1px)}
 .btn-secondary{background:var(--hover);color:var(--text);border:1px solid var(--border)}
 .btn-secondary:hover{background:#2f2f50}
-.btn-danger{background:#dc2626;color:#fff}
 .btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .btn.active{box-shadow:0 0 0 2px var(--accent)}
 .brush-control{display:flex;align-items:center;gap:8px;font-size:13px;color:#94a3b8}
@@ -33,7 +32,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .canvas-container{position:relative;display:none;background:var(--card);border-radius:12px;overflow:hidden;border:1px solid var(--border)}
 .canvas-container.active{display:block}
 .canvas-wrapper{position:relative;overflow:auto;max-height:65vh;display:flex;justify-content:center;align-items:center;background:#0a0a15}
-#mainCanvas{cursor:crosshair;display:block;max-width:100%}
+#displayCanvas{cursor:crosshair;display:block;max-width:100%}
 .comparison-container{position:relative;display:none;overflow:hidden;border-radius:12px;border:1px solid var(--border)}
 .comparison-container.active{display:block}
 .comparison-container canvas{display:block}
@@ -58,73 +57,61 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </head>
 <body>
 <div class="header">
-<h1>✨ AI魔法橡皮擦</h1>
+<h1>AI魔法橡皮擦</h1>
 <p>免费在线去水印 · 纯浏览器处理 · 无需上传服务器</p>
 </div>
 <div class="app">
-<!-- Upload -->
 <div class="upload-area" id="uploadArea">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
 <h2>拖拽图片到这里，或点击上传</h2>
-<p>支持 JPG / PNG / WebP，建议 4000×4000 以内</p>
+<p>支持 JPG / PNG / WebP，建议 4000x4000 以内</p>
 <input type="file" id="fileInput" accept="image/*" style="display:none">
 </div>
-
-<!-- Editor -->
 <div id="editorSection" class="hidden">
 <div class="toolbar">
-<button class="btn btn-secondary" id="btnUploadNew" title="上传新图片">📂 新图片</button>
+<button class="btn btn-secondary" id="btnUploadNew">新图片</button>
 <div class="sep"></div>
-<button class="btn btn-secondary active" id="btnBrush" title="画笔涂抹">🖌️ 涂抹</button>
-<button class="btn btn-secondary" id="btnEraser" title="橡皮擦">🧹 擦除</button>
+<button class="btn btn-secondary active" id="btnBrush">涂抹</button>
+<button class="btn btn-secondary" id="btnEraser">擦除</button>
 <div class="sep"></div>
 <div class="brush-control">
 画笔大小: <input type="range" id="brushSize" min="3" max="80" value="20"> <span id="brushSizeVal">20</span>px
 </div>
 <div class="sep"></div>
-<button class="btn btn-primary" id="btnRemove" disabled>✨ 去除水印</button>
-<button class="btn btn-secondary" id="btnUndo" disabled>↩️ 撤销</button>
-<button class="btn btn-secondary" id="btnRedo" disabled>↪️ 重做</button>
+<button class="btn btn-primary" id="btnRemove" disabled>去除水印</button>
+<button class="btn btn-secondary" id="btnUndo" disabled>撤销</button>
+<button class="btn btn-secondary" id="btnRedo" disabled>重做</button>
 <div class="sep"></div>
-<button class="btn btn-secondary" id="btnCompare" disabled>👁 对比</button>
-<button class="btn btn-primary" id="btnDownload" disabled>💾 下载</button>
+<button class="btn btn-secondary" id="btnCompare" disabled>对比</button>
+<button class="btn btn-primary" id="btnDownload" disabled>下载</button>
 </div>
-
-<!-- Canvas -->
 <div class="canvas-container active" id="canvasBox">
-<div class="canvas-wrapper"><canvas id="mainCanvas"></canvas></div>
+<div class="canvas-wrapper"><canvas id="displayCanvas"></canvas></div>
 <div class="progress-overlay" id="progressOverlay">
 <div class="spinner"></div>
 <div class="progress-text" id="progressText">正在智能修复中...</div>
 </div>
 </div>
-
-<!-- Comparison -->
 <div class="comparison-container" id="comparisonBox">
 <canvas id="compCanvas"></canvas>
 <div class="slider-line" id="sliderLine"></div>
 <div class="slider-handle" id="sliderHandle"></div>
 </div>
-
 <div class="status-bar" id="statusBar">涂抹要去除的水印区域，然后点击「去除水印」</div>
 </div>
-
-<!-- Features -->
 <div class="features" id="featureSection">
-<div class="feature"><div class="icon">🔒</div><h3>隐私安全</h3><p>图片完全在浏览器本地处理，不上传任何服务器</p></div>
-<div class="feature"><div class="icon">🆓</div><h3>完全免费</h3><p>无限制使用，无水印，无收费</p></div>
-<div class="feature"><div class="icon">⚡</div><h3>智能修复</h3><p>多方向像素插值 + 纹理合成，自动填充背景</p></div>
-<div class="feature"><div class="icon">📱</div><h3>多端支持</h3><p>手机、平板、电脑均可使用</p></div>
+<div class="feature"><div class="icon">🔒</div><h3>隐私安全</h3><p>图片完全在浏览器本地处理</p></div>
+<div class="feature"><div class="icon">🆓</div><h3>完全免费</h3><p>无限制使用，无水印</p></div>
+<div class="feature"><div class="icon">⚡</div><h3>智能修复</h3><p>纹理合成算法自动填充</p></div>
+<div class="feature"><div class="icon">📱</div><h3>多端支持</h3><p>手机平板电脑均可使用</p></div>
 </div>
 </div>
-
 <div class="toast" id="toast"></div>
-
 <script>
 const $=id=>document.getElementById(id);
 const uploadArea=$('uploadArea'),fileInput=$('fileInput');
 const editorSection=$('editorSection'),featureSection=$('featureSection');
-const mainCanvas=$('mainCanvas'),ctx=mainCanvas.getContext('2d');
+const displayCanvas=$('displayCanvas'),dCtx=displayCanvas.getContext('2d');
 const compCanvas=$('compCanvas'),compCtx=compCanvas.getContext('2d');
 const canvasBox=$('canvasBox'),comparisonBox=$('comparisonBox');
 const brushSizeInput=$('brushSize'),brushSizeVal=$('brushSizeVal');
@@ -135,14 +122,14 @@ const progressOverlay=$('progressOverlay'),progressText=$('progressText');
 const statusBar=$('statusBar');
 const sliderLine=$('sliderLine'),sliderHandle=$('sliderHandle');
 
-let originalImg=null,resultImg=null;
-let maskCanvas,maskCtx;
+let originalImg=null,resultCanvas=null;
+let workCanvas,workCtx,maskCanvas,maskCtx;
 let painting=false,tool='brush';
 let undoStack=[],redoStack=[];
 let isComparing=false,compSliderX=0.5;
 let displayScale=1;
+const MAX_DIM=2048;
 
-// Upload
 uploadArea.addEventListener('click',()=>fileInput.click());
 fileInput.addEventListener('change',e=>{if(e.target.files[0])loadImage(e.target.files[0])});
 uploadArea.addEventListener('dragover',e=>{e.preventDefault();uploadArea.classList.add('dragover')});
@@ -155,136 +142,104 @@ const reader=new FileReader();
 reader.onload=e=>{
 const img=new Image();
 img.onload=()=>{
-originalImg=img;
-resultImg=null;
+originalImg=img;resultCanvas=null;
 setupCanvas(img);
 editorSection.classList.remove('hidden');
-uploadArea.style.display='none';
-featureSection.style.display='none';
+uploadArea.style.display='none';featureSection.style.display='none';
 btnRemove.disabled=true;btnCompare.disabled=true;btnDownload.disabled=true;
 undoStack=[];redoStack=[];btnUndo.disabled=true;btnRedo.disabled=true;
 isComparing=false;canvasBox.classList.add('active');comparisonBox.classList.remove('active');
 statusBar.textContent='涂抹要去除的水印区域，然后点击「去除水印」';
-};
-img.src=e.target.result;
-};
-reader.readAsDataURL(file);
+};img.src=e.target.result;
+};reader.readAsDataURL(file);
 }
 
 function setupCanvas(img){
-const maxW=1100,maxH=650;
 let w=img.width,h=img.height;
+if(w>MAX_DIM||h>MAX_DIM){const s=MAX_DIM/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s)}
+workCanvas=document.createElement('canvas');workCanvas.width=w;workCanvas.height=h;
+workCtx=workCanvas.getContext('2d');workCtx.drawImage(img,0,0,w,h);
+maskCanvas=document.createElement('canvas');maskCanvas.width=w;maskCanvas.height=h;
+maskCtx=maskCanvas.getContext('2d');maskCtx.clearRect(0,0,w,h);
+const maxW=1100,maxH=650;
 displayScale=Math.min(maxW/w,maxH/h,1);
-const dw=Math.round(w*displayScale),dh=Math.round(h*displayScale);
-mainCanvas.width=dw;mainCanvas.height=dh;
-ctx.drawImage(img,0,0,dw,dh);
-maskCanvas=document.createElement('canvas');
-maskCanvas.width=dw;maskCanvas.height=dh;
-maskCtx=maskCanvas.getContext('2d');
-maskCtx.clearRect(0,0,dw,dh);
+displayCanvas.width=Math.round(w*displayScale);displayCanvas.height=Math.round(h*displayScale);
+dCtx.drawImage(workCanvas,0,0,displayCanvas.width,displayCanvas.height);
 }
 
-// Brush painting
-function getPos(e){
-const rect=mainCanvas.getBoundingClientRect();
+function getWorkPos(e){
+const rect=displayCanvas.getBoundingClientRect();
 const t=e.touches?e.touches[0]:e;
-return{x:(t.clientX-rect.left)*(mainCanvas.width/rect.width),y:(t.clientY-rect.top)*(mainCanvas.height/rect.height)};
+const dx=(t.clientX-rect.left)*(displayCanvas.width/rect.width);
+const dy=(t.clientY-rect.top)*(displayCanvas.height/rect.height);
+return{x:dx/displayScale,y:dy/displayScale};
 }
-
-function startPaint(e){
-e.preventDefault();painting=true;
-const p=getPos(e);
-maskCtx.beginPath();maskCtx.moveTo(p.x,p.y);
-paintDot(p);
-}
-function movePaint(e){
-e.preventDefault();if(!painting)return;
-const p=getPos(e);
-paintDot(p);
-}
-function endPaint(e){
-if(!painting)return;painting=false;
-saveUndo();
-btnRemove.disabled=false;
-}
+function startPaint(e){e.preventDefault();painting=true;const p=getWorkPos(e);maskCtx.beginPath();maskCtx.moveTo(p.x,p.y);paintDot(p)}
+function movePaint(e){e.preventDefault();if(!painting)return;const p=getWorkPos(e);paintDot(p)}
+function endPaint(){if(!painting)return;painting=false;saveUndo();btnRemove.disabled=false}
 function paintDot(p){
-const r=parseInt(brushSizeInput.value)/2;
+const r=parseInt(brushSizeInput.value)/2/displayScale;
 maskCtx.globalCompositeOperation=tool==='brush'?'source-over':'destination-out';
 maskCtx.fillStyle='rgba(255,0,0,0.5)';
 maskCtx.beginPath();maskCtx.arc(p.x,p.y,r,0,Math.PI*2);maskCtx.fill();
-redraw();
+redrawDisplay();
 }
-function redraw(){
-ctx.drawImage(originalImg,0,0,mainCanvas.width,mainCanvas.height);
+function redrawDisplay(){
+dCtx.drawImage(workCanvas,0,0,displayCanvas.width,displayCanvas.height);
 if(hasMask()){
-const tmp=document.createElement('canvas');
-tmp.width=mainCanvas.width;tmp.height=mainCanvas.height;
-const tc=tmp.getContext('2d');
-tc.drawImage(maskCanvas,0,0);
-tc.globalCompositeOperation='source-in';
-tc.fillStyle='rgba(255,60,60,0.35)';
-tc.fillRect(0,0,tmp.width,tmp.height);
-ctx.drawImage(tmp,0,0);
+const tmp=document.createElement('canvas');tmp.width=workCanvas.width;tmp.height=workCanvas.height;
+const tc=tmp.getContext('2d');tc.drawImage(maskCanvas,0,0);
+tc.globalCompositeOperation='source-in';tc.fillStyle='rgba(255,60,60,0.35)';tc.fillRect(0,0,tmp.width,tmp.height);
+dCtx.drawImage(tmp,0,0,displayCanvas.width,displayCanvas.height);
 }
 }
 function hasMask(){const d=maskCtx.getImageData(0,0,maskCanvas.width,maskCanvas.height).data;for(let i=3;i<d.length;i+=4)if(d[i]>0)return true;return false}
 
-mainCanvas.addEventListener('mousedown',startPaint);
-mainCanvas.addEventListener('mousemove',movePaint);
-mainCanvas.addEventListener('mouseup',endPaint);
-mainCanvas.addEventListener('mouseleave',endPaint);
-mainCanvas.addEventListener('touchstart',startPaint,{passive:false});
-mainCanvas.addEventListener('touchmove',movePaint,{passive:false});
-mainCanvas.addEventListener('touchend',endPaint);
+displayCanvas.addEventListener('mousedown',startPaint);
+displayCanvas.addEventListener('mousemove',movePaint);
+displayCanvas.addEventListener('mouseup',endPaint);
+displayCanvas.addEventListener('mouseleave',endPaint);
+displayCanvas.addEventListener('touchstart',startPaint,{passive:false});
+displayCanvas.addEventListener('touchmove',movePaint,{passive:false});
+displayCanvas.addEventListener('touchend',endPaint);
 
-// Tools
 btnBrush.addEventListener('click',()=>{tool='brush';btnBrush.classList.add('active');btnEraser.classList.remove('active')});
 btnEraser.addEventListener('click',()=>{tool='eraser';btnEraser.classList.add('active');btnBrush.classList.remove('active')});
 brushSizeInput.addEventListener('input',()=>brushSizeVal.textContent=brushSizeInput.value);
 
-// Undo/Redo
 function saveUndo(){
 const imgData=maskCtx.getImageData(0,0,maskCanvas.width,maskCanvas.height);
 undoStack.push(imgData);if(undoStack.length>30)undoStack.shift();
 redoStack=[];btnUndo.disabled=false;btnRedo.disabled=true;
 }
 btnUndo.addEventListener('click',()=>{
-if(undoStack.length===0)return;
-const cur=maskCtx.getImageData(0,0,maskCanvas.width,maskCanvas.height);
-redoStack.push(cur);
-maskCtx.putImageData(undoStack.pop(),0,0);
-redraw();btnUndo.disabled=undoStack.length===0;btnRedo.disabled=false;
-btnRemove.disabled=!hasMask();
+if(!undoStack.length)return;
+redoStack.push(maskCtx.getImageData(0,0,maskCanvas.width,maskCanvas.height));
+maskCtx.putImageData(undoStack.pop(),0,0);redrawDisplay();
+btnUndo.disabled=!undoStack.length;btnRedo.disabled=false;btnRemove.disabled=!hasMask();
 });
 btnRedo.addEventListener('click',()=>{
-if(redoStack.length===0)return;
-const cur=maskCtx.getImageData(0,0,maskCanvas.width,maskCanvas.height);
-undoStack.push(cur);
-maskCtx.putImageData(redoStack.pop(),0,0);
-redraw();btnRedo.disabled=redoStack.length===0;btnUndo.disabled=false;
-btnRemove.disabled=!hasMask();
+if(!redoStack.length)return;
+undoStack.push(maskCtx.getImageData(0,0,maskCanvas.width,maskCanvas.height));
+maskCtx.putImageData(redoStack.pop(),0,0);redrawDisplay();
+btnRedo.disabled=!redoStack.length;btnUndo.disabled=false;btnRemove.disabled=!hasMask();
 });
 
-// Inpainting
 btnRemove.addEventListener('click',async()=>{
-progressOverlay.classList.add('active');
-progressText.textContent='正在智能修复中...';
+progressOverlay.classList.add('active');progressText.textContent='正在智能修复中...';
 await new Promise(r=>setTimeout(r,50));
 try{
 await inpaint();
-resultImg=mainCanvas.toDataURL('image/png');
 btnCompare.disabled=false;btnDownload.disabled=false;
-statusBar.textContent='✅ 修复完成！点击「对比」查看效果，或「下载」保存结果';
+statusBar.textContent='修复完成！点击「对比」查看效果，或「下载」保存结果';
 showToast('修复完成！');
-}catch(e){
-showToast('修复失败: '+e.message);
-}
+}catch(e){showToast('修复失败: '+e.message)}
 progressOverlay.classList.remove('active');
 });
 
 async function inpaint(){
-const w=mainCanvas.width,h=mainCanvas.height;
-const srcData=ctx.getImageData(0,0,w,h);
+const w=workCanvas.width,h=workCanvas.height;
+const srcData=workCtx.getImageData(0,0,w,h);
 const maskData=maskCtx.getImageData(0,0,w,h);
 const src=srcData.data,mask=maskData.data;
 
@@ -294,261 +249,250 @@ let maskCount=0;
 for(let i=0;i<w*h;i++){if(mask[i*4+3]>30){isMask[i]=1;maskCount++}}
 if(maskCount===0)return;
 
-const result=new Float32Array(src.length);
-for(let i=0;i<src.length;i++)result[i]=src[i];
-
-// ===== PHASE 1: 12-directional ray sampling =====
-// Cast rays to find nearest real background pixels
-// Weighted interpolation preserves large-scale gradients
-progressText.textContent='采样背景...';
-await new Promise(r=>setTimeout(r,0));
-
-const DIRS=12;
-const dxC=[],dyC=[];
-for(let d=0;d<DIRS;d++){const a=d*Math.PI*2/DIRS;dxC.push(Math.cos(a));dyC.push(Math.sin(a))}
-const MAX_RAY=Math.min(300,Math.max(w,h));
-let proc=0;
-
+// Distance to mask boundary
+const distMap=new Float32Array(w*h);
+distMap.fill(999);
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
-const idx=y*w+x;if(!isMask[idx])continue;
-let sR=0,sG=0,sB=0,sW=0;
-for(let d=0;d<DIRS;d++){
-for(let s=1;s<MAX_RAY;s++){
-const rx=Math.round(x+dxC[d]*s),ry=Math.round(y+dyC[d]*s);
-if(rx<0||rx>=w||ry<0||ry>=h)break;
-if(!isMask[ry*w+rx]){
-const pi=(ry*w+rx)*4;const wt=1/(s*s);
-sR+=src[pi]*wt;sG+=src[pi+1]*wt;sB+=src[pi+2]*wt;sW+=wt;break;
+if(!isMask[y*w+x])continue;
+let md=999;
+for(let dy=-60;dy<=60&&md>1;dy++){
+for(let dx=-60;dx<=60&&md>1;dx++){
+const nx=x+dx,ny=y+dy;
+if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
+md=Math.min(md,Math.sqrt(dx*dx+dy*dy));
 }
 }
 }
-if(sW>0){result[idx*4]=sR/sW;result[idx*4+1]=sG/sW;result[idx*4+2]=sB/sW}
-proc++;
+distMap[y*w+x]=md;
 }
-if(proc%10000===0){progressText.textContent='采样背景... '+Math.min(99,Math.round(proc/maskCount*100))+'%';await new Promise(r=>setTimeout(r,0))}
 }
 
-// ===== PHASE 2: PatchMatch - find best matching real texture =====
-// KEY: compare only non-mask boundary pixels for accurate matching
-// Source uses ORIGINAL image data (real texture, not interpolated)
-progressText.textContent='纹理搜索...';
+const result=new Uint8ClampedArray(src);
+const srcF=new Float32Array(src.length);
+for(let i=0;i<src.length;i++)srcF[i]=src[i];
+
+// ===== PHASE 1: PatchMatch texture synthesis =====
+progressText.textContent='纹理搜索 (初始化)...';
 await new Promise(r=>setTimeout(r,0));
 
-const PR=4; // 9x9 patch
-const ITERS=12;
-const nnfx=new Int32Array(w*h);
-const nnfy=new Int32Array(w*h);
+const PR=5; // 11x11 patches
+const ITERS=16;
+const nnf=new Int32Array(w*h*2);
 
-// Smart init: prefer nearby non-mask pixels
+// Init: nearest non-mask pixel
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
 const idx=y*w+x;
-if(!isMask[idx]){nnfx[idx]=0;nnfy[idx]=0;continue}
+if(!isMask[idx]){nnf[idx*2]=0;nnf[idx*2+1]=0;continue}
 let found=false;
-for(let r=1;r<80&&!found;r++){
+for(let r=1;r<100&&!found;r++){
 for(let dy=-r;dy<=r&&!found;dy++){
 for(let dx=-r;dx<=r&&!found;dx++){
 if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
 const nx=x+dx,ny=y+dy;
 if(nx>=PR&&nx<w-PR&&ny>=PR&&ny<h-PR&&!isMask[ny*w+nx]){
-nnfx[idx]=dx;nnfy[idx]=dy;found=true;
+nnf[idx*2]=dx;nnf[idx*2+1]=dy;found=true;
 }
 }
 }
 }
-if(!found){nnfx[idx]=0;nnfy[idx]=0}
+if(!found){nnf[idx*2]=0;nnf[idx*2+1]=0}
 }
 }
 
-// Patch distance: only compare non-mask pixels in target patch
-// This ensures we match against REAL boundary pixels, not interpolated ones
-function pdist(tx,ty,sx,sy){
+function patchDist(tx,ty,sx,sy){
 let d=0,cnt=0;
 for(let j=-PR;j<=PR;j++){
 for(let i=-PR;i<=PR;i++){
 const ax=tx+i,ay=ty+j,bx=sx+i,by=sy+j;
 if(ax<0||ax>=w||ay<0||ay>=h||bx<0||bx>=w||by<0||by>=h)continue;
-if(isMask[ay*w+ax])continue; // Skip mask pixels - only compare real boundary
+if(isMask[ay*w+ax])continue;
 const p1=(ay*w+ax)*4,p2=(by*w+bx)*4;
-const dr=result[p1]-src[p2],dg=result[p1+1]-src[p2+1],db=result[p1+2]-src[p2+2];
+const dr=src[p1]-src[p2],dg=src[p1+1]-src[p2+1],db=src[p1+2]-src[p2+2];
 d+=dr*dr+dg*dg+db*db;cnt++;
 }
 }
-const offD=(sx-tx)*(sx-tx)+(sy-ty)*(sy-ty);
-return(cnt>0?d/cnt:1e9)+offD*0.08;
+const od=(sx-tx)*(sx-tx)+(sy-ty)*(sy-ty);
+return(cnt>0?d/cnt:1e9)+od*0.04;
 }
 
 for(let iter=0;iter<ITERS;iter++){
 const fwd=iter%2===0;
-for(let y=fwd?0:h-1;fwd?y<h:y>=0;y+=fwd?1:-1){
-for(let x=fwd?0:w-1;fwd?x<w:x>=0;x+=fwd?1:-1){
+progressText.textContent='纹理搜索... 第'+(iter+1)+'/'+ITERS+'轮';
+await new Promise(r=>setTimeout(r,0));
+
+for(let y=fwd?PR:h-PR-1;fwd?y<h-PR:y>=PR;y+=fwd?1:-1){
+for(let x=fwd?PR:w-PR-1;fwd?x<w-PR:x>=PR;x+=fwd?1:-1){
 const idx=y*w+x;
 if(!isMask[idx])continue;
 
-let bx=Math.max(PR,Math.min(w-PR-1,x+nnfx[idx]));
-let by=Math.max(PR,Math.min(h-PR-1,y+nnfy[idx]));
+let bx=x+nnf[idx*2],by=y+nnf[idx*2+1];
+bx=Math.max(PR,Math.min(w-PR-1,bx));
+by=Math.max(PR,Math.min(h-PR-1,by));
 if(isMask[by*w+bx]){bx=PR;by=PR}
-let bd=pdist(x,y,bx,by);
+let bd=patchDist(x,y,bx,by);
 
-// Propagation: horizontal neighbor
-const hx=fwd?x-1:x+1;
-if(hx>=0&&hx<w&&isMask[y*w+hx]){
-const sx=hx+nnfx[y*w+hx],sy=y+nnfy[y*w+hx];
+// Propagate
+const nx=fwd?x-1:x+1,ny=fwd?y-1:y+1;
+if(nx>=PR&&nx<w-PR){
+const nnIdx=y*w+nx;
+if(isMask[nnIdx]){
+let sx=nx+nnf[nnIdx*2]+(x-nx),sy=y+nnf[nnIdx*2+1];
 if(sx>=PR&&sx<w-PR&&sy>=PR&&sy<h-PR&&!isMask[sy*w+sx]){
-const d=pdist(x,y,sx,sy);if(d<bd){bx=sx;by=sy;bd=d}
+const d=patchDist(x,y,sx,sy);if(d<bd){bx=sx;by=sy;bd=d}
 }
 }
-
-// Propagation: vertical neighbor
-const vy=fwd?y-1:y+1;
-if(vy>=0&&vy<h&&isMask[vy*w+x]){
-const sx=x+nnfx[vy*w+x],sy=vy+nnfy[vy*w+x];
+}
+if(ny>=PR&&ny<h-PR){
+const nnIdx=ny*w+x;
+if(isMask[nnIdx]){
+let sx=x+nnf[nnIdx*2],sy=ny+nnf[nnIdx*2+1]+(y-ny);
 if(sx>=PR&&sx<w-PR&&sy>=PR&&sy<h-PR&&!isMask[sy*w+sx]){
-const d=pdist(x,y,sx,sy);if(d<bd){bx=sx;by=sy;bd=d}
+const d=patchDist(x,y,sx,sy);if(d<bd){bx=sx;by=sy;bd=d}
+}
 }
 }
 
-// Random search with decreasing radius
-let sRad=Math.max(w,h)/2;
+// Random search
+let sRad=Math.max(w,h)*0.5;
 while(sRad>=2){
 const rx=Math.round(bx+(Math.random()*2-1)*sRad);
 const ry=Math.round(by+(Math.random()*2-1)*sRad);
 if(rx>=PR&&rx<w-PR&&ry>=PR&&ry<h-PR&&!isMask[ry*w+rx]){
-const d=pdist(x,y,rx,ry);if(d<bd){bx=rx;by=ry;bd=d}
+const d=patchDist(x,y,rx,ry);if(d<bd){bx=rx;by=ry;bd=d}
 }
 sRad=Math.floor(sRad*0.5);
 }
-nnfx[idx]=bx-x;nnfy[idx]=by-y;
+nnf[idx*2]=bx-x;nnf[idx*2+1]=by-y;
 }
 }
-progressText.textContent='纹理搜索... 第'+(iter+1)+'/'+ITERS+'轮';
-await new Promise(r=>setTimeout(r,0));
 }
 
-// ===== PHASE 3: DIRECT COPY - no averaging! =====
-// Copy REAL pixel values from source. This is why it won't be blurry.
+// ===== PHASE 2: Direct copy real pixels =====
 progressText.textContent='复制纹理...';
 await new Promise(r=>setTimeout(r,0));
 
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
 const idx=y*w+x;if(!isMask[idx])continue;
-const sx=x+nnfx[idx],sy=y+nnfy[idx];
-if(sx>=0&&sx<w&&sy>=0&&sy<h&&!isMask[sy*w+sx]){
+const sx=x+nnf[idx*2],sy=y+nnf[idx*2+1];
+if(sx>=0&&sx<w&&sy>=0&&sy<h){
 const si=(sy*w+sx)*4,ti=idx*4;
-result[ti]=src[si];result[ti+1]=src[si+1];result[ti+2]=src[si+2];
+result[ti]=src[si];result[ti+1]=src[si+1];result[ti+2]=src[si+2];result[ti+3]=255;
+srcF[ti]=src[si];srcF[ti+1]=src[si+1];srcF[ti+2]=src[si+2];
 }
 }
 }
 
-// ===== PHASE 4: Local Poisson blending (boundary band only) =====
-// Smooth only at mask boundary to eliminate seams
-// Interior pixels keep their direct-copied real texture
-progressText.textContent='无缝融合...';
-await new Promise(r=>setTimeout(r,0));
-
-const BAND=6;
-const isBand=new Uint8Array(w*h);
-for(let y=0;y<h;y++){
-for(let x=0;x<w;x++){
-const idx=y*w+x;if(!isMask[idx])continue;
-for(let dy=-BAND;dy<=BAND;dy++){
-for(let dx=-BAND;dx<=BAND;dx++){
-const nx=x+dx,ny=y+dy;
-if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){isBand[idx]=1;break}
-}
-if(isBand[idx])break;
-}
-}
-}
-
-for(let iter=0;iter<50;iter++){
-const prev=new Float32Array(result.length);
-for(let i=0;i<result.length;i++)prev[i]=result[i];
-for(let y=1;y<h-1;y++){
-for(let x=1;x<w-1;x++){
-const idx=y*w+x;if(!isBand[idx])continue;
-const pi=idx*4;
-for(let c=0;c<3;c++){
-result[pi+c]=(prev[((y-1)*w+x)*4+c]+prev[((y+1)*w+x)*4+c]+prev[(y*w+(x-1))*4+c]+prev[(y*w+(x+1))*4+c])/4;
-}
-}
-}
-if(iter%10===0)await new Promise(r=>setTimeout(r,0));
-}
-
-// ===== PHASE 5: Color correction =====
+// ===== PHASE 3: Color transfer at boundary =====
 progressText.textContent='颜色校正...';
 await new Promise(r=>setTimeout(r,0));
 
-let inR=0,inG=0,inB=0,inN=0;
-let outR=0,outG=0,outB=0,outN=0;
+const COLOR_BAND=5;
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
 const idx=y*w+x;
-if(isBand[idx]){inR+=result[idx*4];inG+=result[idx*4+1];inB+=result[idx*4+2];inN++}
-else if(!isMask[idx]){
-let border=false;
-for(let dy=-1;dy<=1&&!border;dy++)for(let dx=-1;dx<=1&&!border;dx++){
+if(!isMask[idx]||distMap[idx]>COLOR_BAND)continue;
+
+// Find nearest real pixel
+let bd=999,bpi=-1;
+for(let dy=-40;dy<=40;dy++){
+for(let dx=-40;dx<=40;dx++){
 const nx=x+dx,ny=y+dy;
-if(nx>=0&&nx<w&&ny>=0&&ny<h&&isMask[ny*w+nx])border=true;
+if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
+const d=dx*dx+dy*dy;
+if(d<bd){bd=d;bpi=(ny*w+nx)*4}
 }
-if(border){outR+=src[idx*4];outG+=src[idx*4+1];outB+=src[idx*4+2];outN++}
 }
 }
-}
-if(inN>0&&outN>0){
-inR/=inN;inG/=inN;inB/=inN;
-outR/=outN;outG/=outN;outB/=outN;
-const dr=outR-inR,dg=outG-inG,db=outB-inB;
-for(let i=0;i<w*h;i++){
-if(!isMask[i])continue;
-result[i*4]+=dr;result[i*4+1]+=dg;result[i*4+2]+=db;
+if(bpi<0)continue;
+
+const sxF=x+nnf[idx*2],syF=y+nnf[idx*2+1];
+if(sxF<0||sxF>=w||syF<0||syF>=h)continue;
+const srcFI=(syF*w+sxF)*4;
+
+const dr=src[bpi]-src[srcFI];
+const dg=src[bpi+1]-src[srcFI+1];
+const db=src[bpi+2]-src[srcFI+2];
+
+const alpha=1.0-distMap[idx]/COLOR_BAND;
+const ti=idx*4;
+srcF[ti]+=dr*alpha;srcF[ti+1]+=dg*alpha;srcF[ti+2]+=db*alpha;
 }
 }
 
-// ===== PHASE 6: Boundary feathering (10px) =====
-progressText.textContent='边缘融合...';
+// ===== PHASE 4: Narrow Poisson blend (boundary only) =====
+progressText.textContent='无缝融合...';
 await new Promise(r=>setTimeout(r,0));
 
-const featherR=10;
+const BLEND_BAND=3;
+const isBand=new Uint8Array(w*h);
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
-const idx=y*w+x;if(!isMask[idx])continue;
-let minD=featherR+1;
-for(let dy=-featherR;dy<=featherR&&minD>0;dy++){
-for(let dx=-featherR;dx<=featherR&&minD>0;dx++){
-const nx=x+dx,ny=y+dy;
-if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx])minD=Math.min(minD,Math.sqrt(dx*dx+dy*dy));
+const idx=y*w+x;
+if(!isMask[idx]||distMap[idx]>BLEND_BAND)continue;
+isBand[idx]=1;
 }
 }
-if(minD>featherR)continue;
-const t=Math.max(0,Math.min(1,minD/featherR));
-const a=t*t*(3-2*t);
+
+for(let iter=0;iter<20;iter++){
+const prev=new Float32Array(srcF);
+for(let y=1;y<h-1;y++){
+for(let x=1;x<w-1;x++){
+const idx=y*w+x;
+if(!isBand[idx])continue;
+const pi=idx*4;
+for(let c=0;c<3;c++){
+srcF[pi+c]=(prev[((y-1)*w+x)*4+c]+prev[((y+1)*w+x)*4+c]+prev[(y*w+(x-1))*4+c]+prev[(y*w+(x+1))*4+c])*0.25;
+}
+}
+}
+if(iter%5===0)await new Promise(r=>setTimeout(r,0));
+}
+
+// ===== PHASE 5: Smooth feathering at mask edge =====
+progressText.textContent='边缘羽化...';
+await new Promise(r=>setTimeout(r,0));
+
+const FEATHER=4;
+for(let y=0;y<h;y++){
+for(let x=0;x<w;x++){
+const idx=y*w+x;
+if(!isMask[idx]||distMap[idx]>FEATHER)continue;
+// Blend between inpainted and nearest real pixel
+const alpha=Math.pow(distMap[idx]/FEATHER,2); // quadratic: more inpainted as we go in
 let lr=0,lg=0,lb=0,lw=0;
-const sR=8;
-for(let dy=-sR;dy<=sR;dy++)for(let dx=-sR;dx<=sR;dx++){
+for(let dy=-FEATHER;dy<=FEATHER;dy++){
+for(let dx=-FEATHER;dx<=FEATHER;dx++){
 const nx=x+dx,ny=y+dy;
 if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
 const pi=(ny*w+nx)*4;const wt=1/Math.max(1,Math.sqrt(dx*dx+dy*dy));
 lr+=src[pi]*wt;lg+=src[pi+1]*wt;lb+=src[pi+2]*wt;lw+=wt;
 }
 }
+}
 if(lw>0){
 lr/=lw;lg/=lw;lb/=lw;
-const pi=idx*4;
-result[pi]=result[pi]*a+lr*(1-a);
-result[pi+1]=result[pi+1]*a+lg*(1-a);
-result[pi+2]=result[pi+2]*a+lb*(1-a);
+const ti=idx*4;
+srcF[ti]=srcF[ti]*alpha+lr*(1-alpha);
+srcF[ti+1]=srcF[ti+1]*alpha+lg*(1-alpha);
+srcF[ti+2]=srcF[ti+2]*alpha+lb*(1-alpha);
 }
 }
 }
 
-// Write result
-const outData=ctx.createImageData(w,h);
-for(let i=0;i<w*h*4;i++)outData.data[i]=Math.max(0,Math.min(255,Math.round(result[i])));
-ctx.putImageData(outData,0,0);
+// Write result to work canvas
+const outData=workCtx.createImageData(w,h);
+for(let i=0;i<w*h*4;i++)outData.data[i]=Math.max(0,Math.min(255,Math.round(srcF[i])));
+workCtx.putImageData(outData,0,0);
+
+// Store result for comparison
+resultCanvas=document.createElement('canvas');resultCanvas.width=w;resultCanvas.height=h;
+resultCanvas.getContext('2d').putImageData(outData,0,0);
+
+// Update display
+dCtx.drawImage(workCanvas,0,0,displayCanvas.width,displayCanvas.height);
 
 maskCtx.clearRect(0,0,w,h);
 undoStack=[];redoStack=[];btnUndo.disabled=true;btnRedo.disabled=true;btnRemove.disabled=true;
@@ -558,42 +502,29 @@ undoStack=[];redoStack=[];btnUndo.disabled=true;btnRedo.disabled=true;btnRemove.
 btnCompare.addEventListener('click',()=>{
 if(!isComparing){
 isComparing=true;
-canvasBox.classList.remove('active');
-comparisonBox.classList.add('active');
-compSliderX=0.5;
-drawComparison();
-btnCompare.textContent='🎨 编辑';
+canvasBox.classList.remove('active');comparisonBox.classList.add('active');
+compSliderX=0.5;drawComparison();btnCompare.textContent='编辑';
 }else{
 isComparing=false;
-comparisonBox.classList.remove('active');
-canvasBox.classList.add('active');
-btnCompare.textContent='👁 对比';
+comparisonBox.classList.remove('active');canvasBox.classList.add('active');
+btnCompare.textContent='对比';
 }
 });
 
 function drawComparison(){
-const w=mainCanvas.width,h=mainCanvas.height;
-compCanvas.width=w;compCanvas.height=h;
-// Draw result on right, original on left
-compCtx.drawImage(mainCanvas,0,0);
-const origTmp=document.createElement('canvas');
-origTmp.width=w;origTmp.height=h;
-const oCtx=origTmp.getContext('2d');
-oCtx.drawImage(originalImg,0,0,w,h);
-const splitX=Math.round(w*compSliderX);
-compCtx.save();
-compCtx.beginPath();compCtx.rect(splitX,0,w-splitX,h);compCtx.clip();
-compCtx.drawImage(origTmp,0,0);
-compCtx.restore();
-// Draw labels
+const w=workCanvas.width,h=workCanvas.height;
+compCanvas.width=displayCanvas.width;compCanvas.height=displayCanvas.height;
+// Result on left, original on right
+compCtx.drawImage(resultCanvas,0,0,compCanvas.width,compCanvas.height);
+const origTmp=document.createElement('canvas');origTmp.width=w;origTmp.height=h;
+origTmp.getContext('2d').drawImage(originalImg,0,0,w,h);
+const splitX=Math.round(compCanvas.width*compSliderX);
+compCtx.save();compCtx.beginPath();compCtx.rect(splitX,0,compCanvas.width-splitX,compCanvas.height);compCtx.clip();
+compCtx.drawImage(origTmp,0,0,compCanvas.width,compCanvas.height);compCtx.restore();
 compCtx.font='bold 14px sans-serif';
-compCtx.fillStyle='rgba(0,0,0,0.6)';
-compCtx.fillRect(10,h-36,50,26);compCtx.fillRect(w-60,h-36,50,26);
-compCtx.fillStyle='#fff';
-compCtx.fillText('修复后',16,h-16);compCtx.fillText('原图',w-54,h-16);
-// Slider
-sliderLine.style.left=(compSliderX*100)+'%';
-sliderHandle.style.left=(compSliderX*100)+'%';
+compCtx.fillStyle='rgba(0,0,0,0.6)';compCtx.fillRect(10,compCanvas.height-36,50,26);compCtx.fillRect(compCanvas.width-60,compCanvas.height-36,50,26);
+compCtx.fillStyle='#fff';compCtx.fillText('修复后',16,compCanvas.height-16);compCtx.fillText('原图',compCanvas.width-54,compCanvas.height-16);
+sliderLine.style.left=(compSliderX*100)+'%';sliderHandle.style.left=(compSliderX*100)+'%';
 }
 
 let sliding=false;
@@ -602,27 +533,18 @@ sliderLine.addEventListener('mousedown',e=>{sliding=true;e.preventDefault()});
 document.addEventListener('mousemove',e=>{
 if(!sliding)return;
 const rect=compCanvas.getBoundingClientRect();
-compSliderX=Math.max(0.05,Math.min(0.95,(e.clientX-rect.left)/rect.width));
-drawComparison();
+compSliderX=Math.max(0.05,Math.min(0.95,(e.clientX-rect.left)/rect.width));drawComparison();
 });
 document.addEventListener('mouseup',()=>sliding=false);
 
-// Download
+// Download at FULL resolution
 btnDownload.addEventListener('click',()=>{
-// Render at full resolution
-const fullW=originalImg.width,fullH=originalImg.height;
-const fullCanvas=document.createElement('canvas');
-fullCanvas.width=fullW;fullCanvas.height=fullH;
-const fCtx=fullCanvas.getContext('2d');
-fCtx.drawImage(mainCanvas,0,0,fullW,fullH);
 const link=document.createElement('a');
 link.download='magic-eraser-result.png';
-link.href=fullCanvas.toDataURL('image/png');
-link.click();
-showToast('下载成功！');
+link.href=resultCanvas?resultCanvas.toDataURL('image/png'):workCanvas.toDataURL('image/png');
+link.click();showToast('下载成功！');
 });
 
-// Toast
 function showToast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
 </script>
 </body>
