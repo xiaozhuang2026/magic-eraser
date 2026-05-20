@@ -284,112 +284,132 @@ progressOverlay.classList.remove('active');
 
 async function inpaint(){
 const w=mainCanvas.width,h=mainCanvas.height;
-const srcCtx=ctx;
-const srcData=srcCtx.getImageData(0,0,w,h);
+const srcData=ctx.getImageData(0,0,w,h);
 const maskData=maskCtx.getImageData(0,0,w,h);
 const src=srcData.data,mask=maskData.data;
 
-// Build mask boolean array
+// Build mask
 const isMask=new Uint8Array(w*h);
-for(let i=0;i<w*h;i++){isMask[i]=mask[i*4+3]>30?1:0}
-let maskCount=0;for(let i=0;i<w*h;i++)maskCount+=isMask[i];
+let maskCount=0;
+for(let i=0;i<w*h;i++){if(mask[i*4+3]>30){isMask[i]=1;maskCount++}}
 if(maskCount===0)return;
 
-// Multi-pass iterative inpainting (similar to Telea's method)
-const result=new Float32Array(src);
-const filled=new Uint8Array(isMask);
-const dist=new Float32Array(w*h).fill(1e9);
+const result=new Float32Array(src.length);
+for(let i=0;i<src.length;i++)result[i]=src[i];
 
-// Initialize distance for border pixels
-const dx4=[0,0,-1,1],dy4=[-1,1,0,0];
-const heap=[];
+// filled[i]=1 means pixel has a known color (non-mask or already inpainted)
+const filled=new Uint8Array(w*h);
+for(let i=0;i<w*h;i++)filled[i]=isMask[i]?0:1;
+
+const dx=[-1,0,1,-1,1,-1,0,1];
+const dy=[-1,-1,-1,0,0,1,1,1];
+const wt_d=[1.414,1,1.414,1,1,1.414,1,1.414];
+
+// BFS from mask border inward - process pixels closest to known area first
+const queue=[];
+const inQ=new Uint8Array(w*h);
+
+// Find mask border pixels (mask pixels adjacent to at least 1 known pixel)
 for(let y=0;y<h;y++)for(let x=0;x<w;x++){
 const idx=y*w+x;
 if(!isMask[idx])continue;
-for(let d=0;d<4;d++){
-const nx=x+dx4[d],ny=y+dy4[d];
-if(nx>=0&&nx<w&&ny>=0&&ny<h&&!isMask[ny*w+nx]){
-dist[idx]=1;heap.push([1,x,y]);break;
-}
-}
-}
-
-// Sort heap by distance
-heap.sort((a,b)=>a[0]-b[0]);
-let hi=0;
-
-const dx8=[-1,-1,-1,0,0,1,1,1];
-const dy8=[-1,0,1,-1,1,-1,0,1];
-const dw8=[1.414,1,1.414,1,1,1.414,1,1.414];
-
-let progress=0;
-while(hi<heap.length){
-const[d,cx,cy]=heap[hi++];hi--;
-const ci=cy*w+cx;
-if(filled[ci]&&dist[ci]<=d)continue;
-
-let sumR=0,sumG=0,sumB=0,sumW=0;
 for(let k=0;k<8;k++){
-const nx=cx+dx8[k],ny=cy+dy8[k];
+const nx=x+dx[k],ny=y+dy[k];
+if(nx>=0&&nx<w&&ny>=0&&ny<h&&filled[ny*w+nx]){
+queue.push(idx);inQ[idx]=1;break;
+}
+}
+}
+
+let processed=0;
+let qi=0;
+while(qi<queue.length){
+const idx=queue[qi++];
+const x=idx%w,y=(idx-x)/w;
+
+// Weighted average from known neighbors
+let sr=0,sg=0,sb=0,sw=0;
+for(let k=0;k<8;k++){
+const nx=x+dx[k],ny=y+dy[k];
 if(nx<0||nx>=w||ny<0||ny>=h)continue;
 const ni=ny*w+nx;
-if(!filled[ni]&&!isMask[ni])continue;
-if(filled[ni]||!isMask[ni]){
-const wt=dw8[k]/(dist[ni]+1);
-sumR+=result[ni*4]*wt;sumG+=result[ni*4+1]*wt;sumB+=result[ni*4+2]*wt;sumW+=wt;
+if(filled[ni]){
+const wt=1/wt_d[k];
+sr+=result[ni*4]*wt;sg+=result[ni*4+1]*wt;sb+=result[ni*4+2]*wt;sw+=wt;
 }
 }
-if(sumW>0){
-result[ci*4]=sumR/sumW;result[ci*4+1]=sumG/sumW;result[ci*4+2]=sumB/sumW;
-filled[ci]=1;dist[ci]=d;
-// Add neighbors to heap
+if(sw>0){
+result[idx*4]=sr/sw;result[idx*4+1]=sg/sw;result[idx*4+2]=sb/sw;
+}
+filled[idx]=1;
+
+// Add unfilled mask neighbors to queue
 for(let k=0;k<8;k++){
-const nx=cx+dx8[k],ny=cy+dy8[k];
-if(nx>=0&&nx<w&&ny>=0&&ny<h&&isMask[ny*w+nx]&&!filled[ny*w+nx]){
-heap.push([d+dw8[k],nx,ny]);
+const nx=x+dx[k],ny=y+dy[k];
+if(nx<0||nx>=w||ny<0||ny>=h)continue;
+const ni=ny*w+nx;
+if(isMask[ni]&&!filled[ni]&&!inQ[ni]){queue.push(ni);inQ[ni]=1}
 }
-}
-}
-if(hi%2000===0){
-progressText.textContent=`正在智能修复中... ${Math.min(99,Math.round(hi/heap.length*100))}%`;
+
+processed++;
+if(processed%5000===0){
+const pct=Math.min(99,Math.round(processed/maskCount*100));
+progressText.textContent=`正在智能修复中... ${pct}%`;
 await new Promise(r=>setTimeout(r,0));
 }
 }
 
-// Add texture noise for natural look
-const noiseStd=3;
-for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-const i=y*w+x;
-if(isMask[i]){
-const n=(Math.random()-0.5)*noiseStd*2;
-result[i*4]+=n;result[i*4+1]+=n;result[i*4+2]+=n;
-result[i*4]=Math.max(0,Math.min(255,result[i*4]));
-result[i*4+1]=Math.max(0,Math.min(255,result[i*4+1]));
-result[i*4+2]=Math.max(0,Math.min(255,result[i*4+2]));
-}
-}
-
-// Smoothing pass over mask boundary for seamless blending
+// Smoothing: 3 passes over mask region
+for(let pass=0;pass<3;pass++){
 for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
 const i=y*w+x;
 if(!isMask[i])continue;
 let sr=0,sg=0,sb=0,sw=0;
 for(let k=0;k<8;k++){
-const nx2=x+dx8[k],ny2=y+dy8[k];
-if(nx2<0||nx2>=w||ny2<0||ny2>=h)continue;
-const ni2=ny2*w+nx2;
-const wt=1/dw8[k];
-sr+=result[ni2*4]*wt;sg+=result[ni2*4+1]*wt;sb+=result[ni2*4+2]*wt;sw+=wt;
+const nx=x+dx[k],ny=y+dy[k];
+const ni=ny*w+nx;
+const wt=1/wt_d[k];
+sr+=result[ni*4]*wt;sg+=result[ni*4+1]*wt;sb+=result[ni*4+2]*wt;sw+=wt;
 }
 if(sw>0){result[i*4]=sr/sw;result[i*4+1]=sg/sw;result[i*4+2]=sb/sw}
 }
+}
 
-// Write result to canvas
-const outData=srcCtx.createImageData(w,h);
+// Add subtle texture noise
+for(let i=0;i<w*h;i++){
+if(!isMask[i])continue;
+const n=(Math.random()-0.5)*4;
+result[i*4]=Math.max(0,Math.min(255,result[i*4]+n));
+result[i*4+1]=Math.max(0,Math.min(255,result[i*4+1]+n));
+result[i*4+2]=Math.max(0,Math.min(255,result[i*4+2]+n));
+}
+
+// Feather mask edges: blend 2px border with original for seamless transition
+const feather=2;
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+const i=y*w+x;
+if(!isMask[i])continue;
+// Check if this is a border pixel of the mask
+let border=false;
+for(let k=0;k<8;k++){
+const nx=x+dx[k],ny=y+dy[k];
+if(nx<0||nx>=w||ny<0||ny>=h||!isMask[ny*w+nx]){border=true;break}
+}
+if(border){
+for(let f=0;f<feather;f++){
+const alpha=0.3+0.35*f;
+result[i*4]=result[i*4]*(1-alpha)+src[i*4]*alpha;
+result[i*4+1]=result[i*4+1]*(1-alpha)+src[i*4+1]*alpha;
+result[i*4+2]=result[i*4+2]*(1-alpha)+src[i*4+2]*alpha;
+}
+}
+}
+
+// Write result
+const outData=ctx.createImageData(w,h);
 for(let i=0;i<w*h*4;i++)outData.data[i]=Math.max(0,Math.min(255,Math.round(result[i])));
-srcCtx.putImageData(outData,0,0);
+ctx.putImageData(outData,0,0);
 
-// Clear mask
 maskCtx.clearRect(0,0,w,h);
 undoStack=[];redoStack=[];btnUndo.disabled=true;btnRedo.disabled=true;btnRemove.disabled=true;
 }
